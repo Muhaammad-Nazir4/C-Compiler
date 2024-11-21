@@ -5,17 +5,9 @@
 #include <map>
 #include <unordered_map>
 #include <fstream>
-#include <iomanip> // For setting the table width
+#include <iomanip> 
 
 using namespace std;
-// ANSI escape codes for coloring
-const string RESET = "\033[0m";
-const string RED = "\033[31m";
-const string GREEN = "\033[32m";
-const string YELLOW = "\033[33m";
-const string BLUE = "\033[34m";
-const string CYAN = "\033[36m";
-const string MAGENTA = "\033[35m";
 
 
 enum TokenType {
@@ -27,16 +19,63 @@ enum TokenType {
 };
 
 struct TAC {
-    string op;       // Operator (e.g., +, -, *, /, =, etc.)
-    string arg1;     // First operand
-    string arg2;     // Second operand (can be empty for unary operators)
-    string result;   // Result variable
+    string op;    // Operator (+, -, *, /, =, etc.)
+    string arg1;  // First operand
+    string arg2;  // Second operand (empty for unary ops)
+    string result; // Result variable
 };
+
 vector<TAC> tacInstructions; // Store all TAC instructions
-int tempCounter = 0;         // Temporary variable counter
+int tempCounter = 0;  
+int tempCounter1 = 1;        // Temporary variable counter
 string generateTempVar() {
     return "t" + to_string(tempCounter++);
 }
+string generateTempLable() {
+    return "L" + to_string(tempCounter1++);
+}
+void generateAssemblyCode() {
+    cout << "\nGenerated Assembly Code:\n";
+    
+    for (const TAC &instr : tacInstructions) {
+        if (instr.op == "+") {
+            cout << "MOV AX, " << instr.arg1 << endl;
+            cout << "ADD AX, " << instr.arg2 << endl;
+            cout << "MOV " << instr.result << ", AX" << endl;
+        } else if (instr.op == "-") {
+            cout << "MOV AX, " << instr.arg1 << endl;
+            cout << "SUB AX, " << instr.arg2 << endl;
+            cout << "MOV " << instr.result << ", AX" << endl;
+        } else if (instr.op == "*") {
+            cout << "MOV AX, " << instr.arg1 << endl;
+            cout << "MUL " << instr.arg2 << endl;
+            cout << "MOV " << instr.result << ", AX" << endl;
+        } else if (instr.op == "/") {
+            cout << "MOV AX, " << instr.arg1 << endl;
+            cout << "DIV " << instr.arg2 << endl;
+            cout << "MOV " << instr.result << ", AX" << endl;
+        } else if (instr.op == "=") {
+            cout << "MOV " << instr.result << ", " << instr.arg1 << endl;
+        } else if (instr.op == "==") {
+            cout << "MOV AX, " << instr.arg1 << endl;
+            cout << "CMP AX, " << instr.arg2 << endl;
+            cout << "JE " << instr.result << endl;
+        } else if (instr.op == "!=") {
+            cout << "MOV AX, " << instr.arg1 << endl;
+            cout << "CMP AX, " << instr.arg2 << endl;
+            cout << "JNE " << instr.result << endl;
+        } else if (instr.op == "<") {
+            cout << "MOV AX, " << instr.arg1 << endl;
+            cout << "CMP AX, " << instr.arg2 << endl;
+            cout << "JL " << instr.result << endl;
+        } else if (instr.op == ">") {
+            cout << "MOV AX, " << instr.arg1 << endl;
+            cout << "CMP AX, " << instr.arg2 << endl;
+            cout << "JG " << instr.result << endl;
+        }
+    }
+}
+
 
 
 struct Token {
@@ -287,46 +326,112 @@ private:
         expect(T_SEMICOLON);
     }
 
+
+
+
     void parseAssignment() {
-        string varName = tokens[pos].value;
-        expect(T_ID);
-        expect(T_ASSIGN);
-        string value = parseExpression();
-        expect(T_SEMICOLON);
+    string varName = tokens[pos].value;
+    expect(T_ID);
+    expect(T_ASSIGN);
+    string value = parseExpression();
+    expect(T_SEMICOLON);
 
-        if (symbolTable.find(varName) != symbolTable.end()) {
-            symbolTable[varName].value = value;
-        } else {
-            cout << "Error: Undeclared variable " << varName << " on line " << tokens[pos].line << endl;
-            exit(1);
-        }
+    if (symbolTable.find(varName) != symbolTable.end()) {
+        symbolTable[varName].value = value;
+    } else {
+        cout << "Error: Undeclared variable " << varName << " on line " << tokens[pos].line << endl;
+        exit(1);
     }
 
-    void parseIfStatement() {
-        if (tokens[pos].type == T_IF || tokens[pos].type == T_AGAR) pos++;
-        expect(T_LPAREN);
-        parseExpression();
-        expect(T_RPAREN);
-        parseStatement();  
-        if (tokens[pos].type == T_ELSE) {
-            expect(T_ELSE);
-            parseStatement();  
-        }
+    // Generate TAC for assignment
+    tacInstructions.push_back({"=", value, "", varName});
     }
 
-    void parseWhileStatement() {
-        expect(T_WHILE);
-        expect(T_LPAREN);
-        parseExpression();
-        expect(T_RPAREN);
-        parseStatement();
-    }
 
-    void parseReturnStatement() {
-        expect(T_RETURN);
-        string value = parseExpression();
-        expect(T_SEMICOLON);
+
+
+
+void parseIfStatement() {
+    string labelTrue = generateTempLable();  // Label for true branch
+    string labelEnd = generateTempLable();   // Label for end of if statement
+
+    if (tokens[pos].type == T_IF || tokens[pos].type == T_AGAR) pos++;
+    expect(T_LPAREN);
+    string condition = parseExpression();  // Parse the condition
+    expect(T_RPAREN);
+
+    // Explicitly assign condition to a temp variable (t3 = t2)
+    string tempCondition = generateTempVar();
+    tacInstructions.push_back({"=", condition, "", tempCondition});
+
+    // Add the "if" condition and unconditional "goto"
+    tacInstructions.push_back({"if", tempCondition, "", labelTrue});
+    tacInstructions.push_back({"goto", "", "", labelEnd});
+
+    // Add the true branch label
+    tacInstructions.push_back({labelTrue + ":", "", "", ""});
+    parseStatement();  // Parse the true branch
+
+    // Add the end label
+    tacInstructions.push_back({labelEnd + ":", "", "", ""});
+
+    // Handle optional else branch if present
+    if (tokens[pos].type == T_ELSE) {
+        expect(T_ELSE);
+        parseStatement();  // Parse the else branch
     }
+}
+
+
+
+
+void parseWhileStatement() {
+    string labelStart = generateTempLable();  // Label for the start of the loop
+    string labelEnd = generateTempLable();    // Label for the end of the loop
+
+    expect(T_WHILE);
+    expect(T_LPAREN);
+
+    // Add label for the start of the loop
+    tacInstructions.push_back({labelStart + ":", "", "", ""});
+
+    // Parse the loop condition
+    string condition = parseExpression();
+    expect(T_RPAREN);
+
+    // Explicitly assign condition to a temporary variable
+    string tempCondition = generateTempVar();
+    tacInstructions.push_back({"=", condition, "", tempCondition});
+
+    // Conditional jump: if condition is false, exit loop
+    tacInstructions.push_back({"if False", tempCondition, "", labelEnd});
+
+    // Parse the loop body
+    parseStatement();
+
+    // Add an unconditional jump to the start of the loop
+    tacInstructions.push_back({"goto", "", "", labelStart});
+
+    // Add label for the end of the loop
+    tacInstructions.push_back({labelEnd + ":", "", "", ""});
+}
+
+
+
+void parseReturnStatement() {
+    expect(T_RETURN);
+
+    // Parse the return expression and assign it to a temp variable
+    string returnValue = parseExpression();
+
+    // Generate TAC for the return statement
+    tacInstructions.push_back({"return", returnValue, "", ""});
+
+    // Ensure the return expression ends with a semicolon
+    expect(T_SEMICOLON);
+}
+
+
 
 string parseExpression() {
     string leftValue = parseTerm();
@@ -380,6 +485,7 @@ string parseTerm() {
 
     return leftValue;
 }
+
 
 
 string parseFactor() {
@@ -456,38 +562,59 @@ string parseFactor() {
         return ""; 
     }
 };
+
+
+
+
+
+
 void printTAC() {
     cout << "Three Address Code (TAC):\n";
     for (const auto &inst : tacInstructions) {
-        cout << setw(10) << inst.result << " = " << setw(10) << inst.arg1;
-        if (!inst.arg2.empty()) {
-            cout << " " << inst.op << " " << setw(10) << inst.arg2;
-        } else {
-            cout << " " << inst.op;
+        if (!inst.op.empty()) {
+            if (inst.op.back() == ':') {
+                cout << inst.op << endl;  // Print labels as-is
+            } else if (inst.op == "if") {
+                cout << "if " << inst.arg1 << " goto " << inst.result << endl;  // Conditional jump
+            } else if (inst.op == "if False") {
+                cout << "if False " << inst.arg1 << " goto " << inst.result << endl;  // Conditional jump
+            } else if (inst.op == "goto") {
+                cout << "goto " << inst.result << endl;  // Unconditional jump
+            }else if (inst.op == "return") {
+                cout << "return " << inst.arg1 << endl; // Handles return specifically
+            }else if (!inst.arg2.empty()) {
+                cout << inst.result << " = " << inst.arg1 << " " << inst.op << " " << inst.arg2 << endl;
+            } else {
+                cout << inst.result << " = " << inst.arg1 << endl;
+            }
+        } else if (!inst.result.empty()) {
+            cout << inst.result << " = " << inst.arg1 << endl;
         }
-        cout << endl;
     }
 }
 
 
+
+
+
 void printTableWithBorders() {
     // Print table with borders
-    const string borderLine = "--------------------------------------------------------------------";
+    const string borderLine = "+----------------------+---------------+---------------+------------+";
     const string headerLine = "| Variable            | Type          | Value         | Line       |";
 
-    cout << CYAN << borderLine << RESET << endl;
-    cout << BLUE << headerLine << RESET << endl;
-    cout << CYAN << borderLine << RESET << endl;
+    cout  << borderLine << endl;
+    cout << headerLine << endl;
+    cout  << borderLine  << endl;
 
     for (const auto &pair : symbolTable) {
         const auto &symbol = pair.second;
         cout << "| " << setw(18) << left << pair.first
              << "| " << setw(13) << left << symbol.type
-             << "| " << setw(13) << left << symbol.value
-            << "| " << setw(10) << symbol.line << RESET << " |" << endl;
+              << "| " << setw(13) << left << symbol.value
+              << "| " << setw(10) << symbol.line  << " |" << endl;
     }
 
-    cout << CYAN << borderLine << RESET << endl;
+    cout  << borderLine << endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -511,8 +638,12 @@ int main(int argc, char* argv[]) {
     Parser parser(tokens);
     parser.parseProgram();
 
+    // Print the symbol table with borders and colors
     printTableWithBorders();
     printTAC();
+
+    // Generate and print assembly code
+    generateAssemblyCode();
 
     return 0;
 }
