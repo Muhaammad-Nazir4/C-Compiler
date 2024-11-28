@@ -15,7 +15,9 @@ enum TokenType {
     T_ID, T_NUM, T_IF, T_ELSE, T_RETURN, T_AGAR, T_WHILE,
     T_ASSIGN, T_PLUS, T_MINUS, T_MUL, T_DIV, 
     T_LPAREN, T_RPAREN, T_LBRACE, T_RBRACE,  
-    T_SEMICOLON, T_GT, T_LT, T_EQ, T_NEQ, T_AND, T_OR, T_EOF,
+    T_SEMICOLON, T_GT, T_LT, T_EQ, T_NEQ, T_AND, T_OR, T_EOF, T_VOID, T_COMMA,
+        T_LBRACKET, 
+    T_RBRACKET,
 };
 
 struct TAC {
@@ -103,7 +105,8 @@ private:
         {"int", T_INT}, {"float", T_FLOAT}, {"double", T_DOUBLE},
         {"string", T_STRING}, {"bool", T_BOOL}, {"char", T_CHAR},
         {"if", T_IF}, {"Agar", T_AGAR}, {"else", T_ELSE},
-        {"return", T_RETURN}, {"while", T_WHILE}
+        {"return", T_RETURN}, {"while", T_WHILE}, {"void", T_VOID}
+
     };
 
 public:
@@ -177,8 +180,11 @@ public:
                 case '{': tokens.push_back(Token{T_LBRACE, "{", line}); break;
                 case '}': tokens.push_back(Token{T_RBRACE, "}", line}); break;
                 case ';': tokens.push_back(Token{T_SEMICOLON, ";", line}); break;
+                case ',': tokens.push_back(Token{T_COMMA, ",", line}); break;
                 case '>': tokens.push_back(Token{T_GT, ">", line}); break;
                 case '<': tokens.push_back(Token{T_LT, "<", line}); break;
+                case '[': tokens.push_back(Token{T_LBRACKET, "[", line}); break; 
+                case ']': tokens.push_back(Token{T_RBRACKET, "]", line}); break; 
                 case '!':
                     if (peek() == '=') { pos++; tokens.push_back(Token{T_NEQ, "!=", line}); }
                     break;
@@ -276,26 +282,45 @@ public:
     }
 
 private:
+
+
     void parseStatement() {
-        if (tokens[pos].type == T_INT || tokens[pos].type == T_FLOAT || 
-            tokens[pos].type == T_DOUBLE || tokens[pos].type == T_STRING || 
-            tokens[pos].type == T_BOOL || tokens[pos].type == T_CHAR) {
-            parseDeclaration();
-        } else if (tokens[pos].type == T_ID) {
+    if (tokens[pos].type == T_INT || tokens[pos].type == T_FLOAT || 
+        tokens[pos].type == T_DOUBLE || tokens[pos].type == T_STRING || 
+        tokens[pos].type == T_BOOL || tokens[pos].type == T_CHAR) {
+        parseDeclaration();
+    } else if (tokens[pos].type == T_ID) {
+        if (tokens[pos + 1].type == T_LBRACKET) { // Array assignment
+            parseArrayAssignment();
+        } else if (tokens[pos + 1].type == T_ASSIGN) { // Regular assignment
             parseAssignment();
-        } else if (tokens[pos].type == T_IF || tokens[pos].type == T_AGAR) {
-            parseIfStatement();
-        } else if (tokens[pos].type == T_RETURN) {
-            parseReturnStatement();
-        } else if (tokens[pos].type == T_WHILE) {
-            parseWhileStatement();
-        } else if (tokens[pos].type == T_LBRACE) {  
-            parseBlock();
-        } else {
-            cout << "Syntax error: unexpected token " << tokens[pos].value << " on line " << tokens[pos].line << endl;
+        }
+        else {
+            cout << "Syntax error: unexpected token after " << tokens[pos].value << " on line " << tokens[pos].line << endl;
             exit(1);
         }
+    } else if (tokens[pos].type == T_VOID) { // Void function declaration
+        parseVoidFunction();
+    } else if (tokens[pos].type == T_IF || tokens[pos].type == T_AGAR) {
+        parseIfStatement();
+    } else if (tokens[pos].type == T_RETURN) {
+        parseReturnStatement();
+    } else if (tokens[pos].type == T_WHILE) {
+        parseWhileStatement();
+    } else if (tokens[pos].type == T_LBRACE) {  
+        parseBlock();
+    } else {
+        cout << "Syntax error: unexpected token " << tokens[pos].value << " on line " << tokens[pos].line << endl;
+        exit(1);
     }
+}
+
+
+
+
+
+
+
 
     void parseBlock() {
         expect(T_LBRACE);  
@@ -305,26 +330,44 @@ private:
         expect(T_RBRACE);  
     }
 
-    void parseDeclaration() {
-        TokenType varType = tokens[pos].type;
-        string typeString;
-        switch (varType) {
-            case T_INT: typeString = "int"; break;
-            case T_FLOAT: typeString = "float"; break;
-            case T_DOUBLE: typeString = "double"; break;
-            case T_STRING: typeString = "string"; break;
-            case T_BOOL: typeString = "bool"; break;
-            case T_CHAR: typeString = "char"; break;
-            default: typeString = "unknown"; break; 
-        }
-        
-        pos++;  
-        expect(T_ID);
-        string varName = tokens[pos - 1].value;
+void parseDeclaration() {
+    TokenType varType = tokens[pos].type;
+    string typeString;
 
-        symbolTable[varName] = {typeString, "0", tokens[pos - 1].line}; 
-        expect(T_SEMICOLON);
+    switch (varType) {
+        case T_INT: typeString = "int"; break;
+        case T_FLOAT: typeString = "float"; break;
+        case T_DOUBLE: typeString = "double"; break;
+        case T_STRING: typeString = "string"; break;
+        case T_BOOL: typeString = "bool"; break;
+        case T_CHAR: typeString = "char"; break;
+        default: typeString = "unknown"; break;
     }
+
+    pos++;
+    expect(T_ID);
+    string varName = tokens[pos - 1].value;
+
+    if (tokens[pos].type == T_LBRACKET) { // Array declaration
+        pos++;
+        string size = parseExpression();
+        expect(T_RBRACKET);
+
+        // Generate TAC for memory allocation
+        string tempVar = generateTempVar();
+        tacInstructions.push_back({"newArray", size, "", tempVar});  // Memory allocation
+        tacInstructions.push_back({"=", tempVar, "", varName});      // Assign base address
+
+        symbolTable[varName] = {typeString + "[]", size, tokens[pos - 1].line};
+    } else {
+        // Regular variable declaration
+        symbolTable[varName] = {typeString, "0", tokens[pos - 1].line};
+    }
+
+    expect(T_SEMICOLON);
+}
+
+
 
 
 
@@ -430,6 +473,103 @@ void parseReturnStatement() {
     // Ensure the return expression ends with a semicolon
     expect(T_SEMICOLON);
 }
+
+
+void parseArray() {
+    expect(T_ID); // Expect array name
+    string arrayName = tokens[pos - 1].value;
+
+    expect(T_LBRACKET); // Expect [
+    string indexOrSize = parseExpression(); // Parse the size or index
+    expect(T_RBRACKET); // Expect ]
+
+    if (tokens[pos].type == T_ASSIGN) { // Assignment
+        pos++;
+        string value = parseExpression(); // Parse the assigned value
+        tacInstructions.push_back({"[]=", value, indexOrSize, arrayName});
+    } else { // Declaration
+        symbolTable[arrayName] = {"array", indexOrSize, tokens[pos - 1].line};
+        tacInstructions.push_back({"array_decl", indexOrSize, "", arrayName});
+    }
+
+    expect(T_SEMICOLON);
+}
+
+void parseArrayAssignment() {
+    expect(T_ID);
+    string arrayName = tokens[pos - 1].value;
+
+    expect(T_LBRACKET);
+    string index = parseExpression();
+    expect(T_RBRACKET);
+
+    expect(T_ASSIGN);
+    string value = parseExpression();
+    expect(T_SEMICOLON);
+
+    // Generate TAC for index and address computation
+    string tempIndex = generateTempVar();
+    tacInstructions.push_back({"=", index, "", tempIndex});  // Load index into temp
+
+    string tempAddress = generateTempVar();
+    tacInstructions.push_back({"+", arrayName, "(" + tempIndex + " * 4)", tempAddress});  // Compute address
+
+    // Generate TAC for value assignment
+    tacInstructions.push_back({"*=", value, "", tempAddress});
+}
+
+
+void parseVoidFunction() {
+    expect(T_VOID);          // Expect "void"
+    expect(T_ID);            // Expect function name
+    string funcName = tokens[pos - 1].value;
+
+    expect(T_LPAREN);        // Expect "("
+    vector<pair<string, string>> parameters;  // To store parameter types and names
+
+    // Parse parameter list
+    while (tokens[pos].type != T_RPAREN) {
+        if (tokens[pos].type == T_INT || tokens[pos].type == T_FLOAT || tokens[pos].type == T_DOUBLE ||
+            tokens[pos].type == T_STRING || tokens[pos].type == T_BOOL || tokens[pos].type == T_CHAR) {
+            string paramType = tokens[pos].value;  // Capture the parameter type
+            pos++;  // Consume the type
+
+            expect(T_ID);  // Expect parameter name
+            string paramName = tokens[pos - 1].value;  // Capture the parameter name
+
+            parameters.push_back({paramType, paramName});  // Store the parameter type and name
+
+            if (tokens[pos].type == T_COMMA) {
+                pos++;  // Consume the comma and continue parsing parameters
+            }
+        } else {
+            cout << "Syntax error: Expected type and parameter name in function declaration on line " << tokens[pos].line << endl;
+            exit(1);
+        }
+    }
+    expect(T_RPAREN);        // Expect ")"
+
+    // Generate TAC for function entry
+    tacInstructions.push_back({"func", "", "", funcName});
+
+    // Optionally print the parsed parameters (for debugging)
+    for (const auto &param : parameters) {
+        cout << "Parameter: " << param.first << " " << param.second << endl;
+    }
+
+    expect(T_LBRACE);        // Expect function body start "{"
+    while (tokens[pos].type != T_RBRACE) {  // Parse all statements in the function body
+        parseStatement();
+    }
+    expect(T_RBRACE);        // Expect function body end "}"
+
+    // Generate TAC for function exit
+    tacInstructions.push_back({"end_func", "", "", funcName});
+}
+
+
+
+
 
 
 
@@ -564,34 +704,59 @@ string parseFactor() {
 };
 
 
-
-
-
-
 void printTAC() {
     cout << "Three Address Code (TAC):\n";
     for (const auto &inst : tacInstructions) {
         if (!inst.op.empty()) {
-            if (inst.op.back() == ':') {
-                cout << inst.op << endl;  // Print labels as-is
+                        if (inst.op == "func") {
+                // Print function entry label
+                cout << "func " << inst.result << endl;
+            } else if (inst.op == "end_func") {
+                // Print function exit label
+                cout << "end_func " << inst.result << endl;
+            }else if (inst.op == "newArray") {
+                // Print array memory allocation
+                cout << inst.result << " = newArray(" << inst.arg1 << ")" << endl;
+            } else if (inst.op == "array_decl") {
+                // Print simplified array declaration
+                cout << "array_decl " << inst.arg1 << " " << inst.result << endl;
+            } else if (inst.op == "array_address") {
+                // Print array address calculation
+                cout << inst.result << " = " << inst.arg1 << " + (" << inst.arg2 << " * 4)" << endl;
+            } else if (inst.op == "*=") {
+                // Print array element assignment
+                cout << "*" << inst.result << " = " << inst.arg1 << endl;
+            } else if (inst.op.back() == ':') {
+                // Print labels
+                cout << inst.op << endl;
             } else if (inst.op == "if") {
-                cout << "if " << inst.arg1 << " goto " << inst.result << endl;  // Conditional jump
+                // Conditional jump
+                cout << "if " << inst.arg1 << " goto " << inst.result << endl;
             } else if (inst.op == "if False") {
-                cout << "if False " << inst.arg1 << " goto " << inst.result << endl;  // Conditional jump
+                // Conditional jump (false)
+                cout << "if False " << inst.arg1 << " goto " << inst.result << endl;
             } else if (inst.op == "goto") {
-                cout << "goto " << inst.result << endl;  // Unconditional jump
-            }else if (inst.op == "return") {
-                cout << "return " << inst.arg1 << endl; // Handles return specifically
-            }else if (!inst.arg2.empty()) {
+                // Unconditional jump
+                cout << "goto " << inst.result << endl;
+            } else if (inst.op == "return") {
+                // Return statement
+                cout << "return " << inst.arg1 << endl;
+            } else if (!inst.arg2.empty()) {
+                // Binary operations
                 cout << inst.result << " = " << inst.arg1 << " " << inst.op << " " << inst.arg2 << endl;
             } else {
+                // Unary operations or simple assignments
                 cout << inst.result << " = " << inst.arg1 << endl;
             }
         } else if (!inst.result.empty()) {
+            // Default assignment
             cout << inst.result << " = " << inst.arg1 << endl;
         }
     }
 }
+
+
+
 
 
 
