@@ -18,6 +18,12 @@ enum TokenType {
     T_SEMICOLON, T_GT, T_LT, T_EQ, T_NEQ, T_AND, T_OR, T_EOF, T_VOID, T_COMMA,
         T_LBRACKET, 
     T_RBRACKET,
+    T_CLASS,        // 'class'
+    T_PUBLIC,       // 'public'
+    T_PRIVATE,      // 'private'
+    T_PROTECTED,    // 'protected' (optional, if you need it)
+    T_COLON 
+    
 };
 
 struct TAC {
@@ -105,7 +111,8 @@ private:
         {"int", T_INT}, {"float", T_FLOAT}, {"double", T_DOUBLE},
         {"string", T_STRING}, {"bool", T_BOOL}, {"char", T_CHAR},
         {"if", T_IF}, {"Agar", T_AGAR}, {"else", T_ELSE},
-        {"return", T_RETURN}, {"while", T_WHILE}, {"void", T_VOID}
+        {"return", T_RETURN}, {"while", T_WHILE}, {"void", T_VOID},
+        {"class", T_CLASS}, {"public", T_PUBLIC}, {"private", T_PRIVATE}, {"protected", T_PROTECTED}
 
     };
 
@@ -185,6 +192,7 @@ public:
                 case '<': tokens.push_back(Token{T_LT, "<", line}); break;
                 case '[': tokens.push_back(Token{T_LBRACKET, "[", line}); break; 
                 case ']': tokens.push_back(Token{T_RBRACKET, "]", line}); break; 
+                case ':': tokens.push_back(Token{T_COLON, ":", line}); break;
                 case '!':
                     if (peek() == '=') { pos++; tokens.push_back(Token{T_NEQ, "!=", line}); }
                     break;
@@ -274,46 +282,63 @@ public:
         this->pos = 0;          
     }
 
-    void parseProgram() {
-        while (tokens[pos].type != T_EOF) {
-            parseStatement();
+void parseProgram() {
+    while (tokens[pos].type != T_EOF) {
+        if (tokens[pos].type == T_VOID || tokens[pos].type == T_INT || 
+            tokens[pos].type == T_FLOAT || tokens[pos].type == T_DOUBLE || 
+            tokens[pos].type == T_STRING || tokens[pos].type == T_BOOL || 
+            tokens[pos].type == T_CHAR) {
+            parseFunction(); // Parse function declaration
+        } else {
+            parseStatement(); // Parse regular statements
         }
-        cout << "Parsing completed successfully! No Syntax Error" << endl;
     }
+    cout << "Parsing completed successfully! No Syntax Error" << endl;
+}
 
 private:
 
 
-    void parseStatement() {
-    if (tokens[pos].type == T_INT || tokens[pos].type == T_FLOAT || 
-        tokens[pos].type == T_DOUBLE || tokens[pos].type == T_STRING || 
-        tokens[pos].type == T_BOOL || tokens[pos].type == T_CHAR) {
+
+
+
+
+void parseStatement() {
+    if (tokens[pos].type == T_CLASS) {
+        // Handle class declaration
+        pos++; // Move past the 'class' keyword
+        parseClass();
+    } else if (tokens[pos].type == T_INT || tokens[pos].type == T_FLOAT || 
+               tokens[pos].type == T_DOUBLE || tokens[pos].type == T_STRING || 
+               tokens[pos].type == T_BOOL || tokens[pos].type == T_CHAR) {
         parseDeclaration();
     } else if (tokens[pos].type == T_ID) {
         if (tokens[pos + 1].type == T_LBRACKET) { // Array assignment
             parseArrayAssignment();
         } else if (tokens[pos + 1].type == T_ASSIGN) { // Regular assignment
             parseAssignment();
-        }
-        else {
-            cout << "Syntax error: unexpected token after " << tokens[pos].value << " on line " << tokens[pos].line << endl;
+        } else {
+            cout << "Syntax error: unexpected token after " << tokens[pos].value 
+                 << " on line " << tokens[pos].line << endl;
             exit(1);
         }
-    } else if (tokens[pos].type == T_VOID) { // Void function declaration
-        parseVoidFunction();
-    } else if (tokens[pos].type == T_IF || tokens[pos].type == T_AGAR) {
+    } 
+
+    else if (tokens[pos].type == T_IF || tokens[pos].type == T_AGAR) {
         parseIfStatement();
     } else if (tokens[pos].type == T_RETURN) {
         parseReturnStatement();
     } else if (tokens[pos].type == T_WHILE) {
         parseWhileStatement();
-    } else if (tokens[pos].type == T_LBRACE) {  
+    } else if (tokens[pos].type == T_LBRACE) {
         parseBlock();
     } else {
-        cout << "Syntax error: unexpected token " << tokens[pos].value << " on line " << tokens[pos].line << endl;
+        cout << "Syntax error: unexpected token " << tokens[pos].value 
+             << " on line " << tokens[pos].line << endl;
         exit(1);
     }
 }
+
 
 
 
@@ -397,6 +422,7 @@ void parseDeclaration() {
 void parseIfStatement() {
     string labelTrue = generateTempLable();  // Label for true branch
     string labelEnd = generateTempLable();   // Label for end of if statement
+  
 
     if (tokens[pos].type == T_IF || tokens[pos].type == T_AGAR) pos++;
     expect(T_LPAREN);
@@ -414,7 +440,8 @@ void parseIfStatement() {
     // Add the true branch label
     tacInstructions.push_back({labelTrue + ":", "", "", ""});
     parseStatement();  // Parse the true branch
-
+    string labelEnd1 = generateTempLable(); 
+    tacInstructions.push_back({"goto", "", "", labelEnd1});
     // Add the end label
     tacInstructions.push_back({labelEnd + ":", "", "", ""});
 
@@ -429,6 +456,7 @@ void parseIfStatement() {
 
 
 void parseWhileStatement() {
+    tempCounter1=tempCounter1-1;
     string labelStart = generateTempLable();  // Label for the start of the loop
     string labelEnd = generateTempLable();    // Label for the end of the loop
 
@@ -519,52 +547,130 @@ void parseArrayAssignment() {
 }
 
 
-void parseVoidFunction() {
-    expect(T_VOID);          // Expect "void"
-    expect(T_ID);            // Expect function name
+
+
+
+void parseFunction() {
+    // Parse the return type
+    if (tokens[pos].type == T_VOID || tokens[pos].type == T_INT || 
+        tokens[pos].type == T_FLOAT || tokens[pos].type == T_DOUBLE || 
+        tokens[pos].type == T_STRING || tokens[pos].type == T_BOOL || 
+        tokens[pos].type == T_CHAR) {
+        pos++; // Consume the return type
+    } else {
+        cout << "Syntax error: expected a valid return type but found '" 
+             << tokens[pos].value << "' on line " << tokens[pos].line << endl;
+        exit(1);
+    }
+
+    // Parse the function name
+    expect(T_ID);  
     string funcName = tokens[pos - 1].value;
 
-    expect(T_LPAREN);        // Expect "("
-    vector<pair<string, string>> parameters;  // To store parameter types and names
-
-    // Parse parameter list
-    while (tokens[pos].type != T_RPAREN) {
-        if (tokens[pos].type == T_INT || tokens[pos].type == T_FLOAT || tokens[pos].type == T_DOUBLE ||
-            tokens[pos].type == T_STRING || tokens[pos].type == T_BOOL || tokens[pos].type == T_CHAR) {
-            string paramType = tokens[pos].value;  // Capture the parameter type
-            pos++;  // Consume the type
-
-            expect(T_ID);  // Expect parameter name
-            string paramName = tokens[pos - 1].value;  // Capture the parameter name
-
-            parameters.push_back({paramType, paramName});  // Store the parameter type and name
-
-            if (tokens[pos].type == T_COMMA) {
-                pos++;  // Consume the comma and continue parsing parameters
+    expect(T_LPAREN);  // Ensure "("
+    
+    // Parse parameters
+    if (tokens[pos].type != T_RPAREN) {  // Check if there are parameters
+        do {
+            // Parse the parameter type
+            if (tokens[pos].type != T_INT && tokens[pos].type != T_FLOAT &&
+                tokens[pos].type != T_DOUBLE && tokens[pos].type != T_STRING &&
+                tokens[pos].type != T_BOOL && tokens[pos].type != T_CHAR) {
+                cout << "Syntax error: expected a parameter type but found '" 
+                     << tokens[pos].value << "' on line " << tokens[pos].line << endl;
+                exit(1);
             }
-        } else {
-            cout << "Syntax error: Expected type and parameter name in function declaration on line " << tokens[pos].line << endl;
+            pos++;  // Consume the type token
+
+            // Parse the parameter name
+            expect(T_ID);
+
+            // If there's a comma, continue parsing parameters
+            if (tokens[pos].type == T_COMMA) {
+                pos++;  // Consume the comma
+            } else {
+                break;  // No more parameters
+            }
+        } while (true);
+    }
+
+    expect(T_RPAREN);  // Ensure ")"
+
+    expect(T_LBRACE);  // Start of function body
+        tacInstructions.push_back({"func", "", "", funcName});
+    // tacInstructions.push_back({funcName + ":", "", "", ""}); // Add function label
+
+    // Parse statements in the function body
+    while (tokens[pos].type != T_RBRACE && tokens[pos].type != T_EOF) {
+        parseStatement();
+    }
+
+    expect(T_RBRACE);  // End of function body
+    tacInstructions.push_back({"end_func", "", "", funcName});
+    // tacInstructions.push_back({"end_func", "", "", ""}); // Add return TAC
+}
+
+
+
+
+void parseClass() {
+    expect(T_ID); // Expect class name
+    string className = tokens[pos - 1].value;
+tacInstructions.push_back({"start_class", "", "", className});
+    expect(T_LBRACE); // Expect opening brace
+    while (tokens[pos].type != T_RBRACE) {
+        if (tokens[pos].type == T_PUBLIC || tokens[pos].type == T_PRIVATE) {
+            parseAccessSpecifier(); // Handle access specifiers
+        } else if (isType(tokens[pos].type)) {
+            parseMemberVariable(className); // Handle member variables
+        } else if (tokens[pos].type == T_VOID || tokens[pos].type == T_INT || 
+            tokens[pos].type == T_FLOAT || tokens[pos].type == T_DOUBLE || 
+            tokens[pos].type == T_STRING || tokens[pos].type == T_BOOL || 
+            tokens[pos].type == T_CHAR) {
+            parseFunction(); // Handle member functions
+        } 
+        else {
+            cout << "Syntax error: unexpected token " << tokens[pos].value 
+                 << " on line " << tokens[pos].line << endl;
             exit(1);
         }
     }
-    expect(T_RPAREN);        // Expect ")"
+    expect(T_RBRACE); // Expect closing brace of the class body
 
-    // Generate TAC for function entry
-    tacInstructions.push_back({"func", "", "", funcName});
-
-    // Optionally print the parsed parameters (for debugging)
-    for (const auto &param : parameters) {
-        cout << "Parameter: " << param.first << " " << param.second << endl;
+    // Expect the semicolon after the class definition
+    if (tokens[pos].type == T_SEMICOLON) {
+        pos++; // Consume the semicolon
+    } else {
+        cout << "Syntax error: Expected ';' after class declaration on line " << tokens[pos].line << endl;
+        exit(1);
     }
 
-    expect(T_LBRACE);        // Expect function body start "{"
-    while (tokens[pos].type != T_RBRACE) {  // Parse all statements in the function body
-        parseStatement();
-    }
-    expect(T_RBRACE);        // Expect function body end "}"
+    // Generate TAC for the end of the class
+    tacInstructions.push_back({"end_class", "", "", className});
+}
 
-    // Generate TAC for function exit
-    tacInstructions.push_back({"end_func", "", "", funcName});
+
+bool isType(TokenType type) {
+    return type == T_INT || type == T_FLOAT || type == T_DOUBLE || type == T_STRING || type == T_BOOL || type == T_CHAR;
+}
+
+void parseAccessSpecifier() {
+    // Skip the access specifier (private/public)
+    pos++;
+    expect(T_COLON); // Expect a colon after the specifier
+}
+
+void parseMemberVariable(const string &className) {
+    string type = tokens[pos++].value; // Get the type
+    expect(T_ID);
+    string varName = tokens[pos - 1].value;
+
+    // Add to symbol table
+    string qualifiedName = className + "::" + varName;
+    symbolTable[qualifiedName] = {type, "0", tokens[pos - 1].line};
+
+    tacInstructions.push_back({"member_decl", type, "", qualifiedName});
+    expect(T_SEMICOLON);
 }
 
 
@@ -655,6 +761,8 @@ string parseFactor() {
 
 
 
+
+
     void expect(TokenType type) {
         if (tokens[pos].type == type) {
             pos++;
@@ -704,24 +812,34 @@ string parseFactor() {
 };
 
 
+
 void printTAC() {
     cout << "Three Address Code (TAC):\n";
     for (const auto &inst : tacInstructions) {
         if (!inst.op.empty()) {
-                        if (inst.op == "func") {
-                // Print function entry label
+            if (inst.op == "start_class") {
+                // Print class declaration
+                cout << "start_class " << inst.result << endl;
+            } else if (inst.op == "end_class") {
+                // Print end of class
+                cout << "end_class " << inst.result << endl;
+            } else if (inst.op == "member_decl") {
+                // Print member variable declaration
+                cout << "member_decl " << inst.arg1 << " " << inst.result << endl;
+            } else if (inst.op == "func") {
+                // Print function entry
                 cout << "func " << inst.result << endl;
             } else if (inst.op == "end_func") {
-                // Print function exit label
+                // Print function exit
                 cout << "end_func " << inst.result << endl;
-            }else if (inst.op == "newArray") {
+            } else if (inst.op == "newArray") {
                 // Print array memory allocation
                 cout << inst.result << " = newArray(" << inst.arg1 << ")" << endl;
             } else if (inst.op == "array_decl") {
-                // Print simplified array declaration
+                // Print array declaration
                 cout << "array_decl " << inst.arg1 << " " << inst.result << endl;
             } else if (inst.op == "array_address") {
-                // Print array address calculation
+                // Print array address computation
                 cout << inst.result << " = " << inst.arg1 << " + (" << inst.arg2 << " * 4)" << endl;
             } else if (inst.op == "*=") {
                 // Print array element assignment
@@ -754,8 +872,6 @@ void printTAC() {
         }
     }
 }
-
-
 
 
 
